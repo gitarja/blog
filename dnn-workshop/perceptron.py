@@ -8,7 +8,7 @@ n_output = 1
 
 X = tf.placeholder(tf.float64, [None, n_input], name="X")
 W = tf.get_variable(name="W", shape=[n_input, n_output], initializer=tf.random_uniform_initializer, dtype=tf.float64)
-t = tf.placeholder(tf.float64, [None, n_output], name="y")
+t = tf.placeholder(tf.float64, [None, n_output], name="t")
 
 y = tf.sigmoid(tf.matmul(X, W))
 
