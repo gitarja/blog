@@ -1,52 +1,90 @@
 import tensorflow.contrib.keras as K
 import tensorflow as tf
 
-class Encoder(K.models.Model):
 
-    def sampling(self, args):
-        """Reparameterization trick by sampling fr an isotropic unit Gaussian.
-            # Arguments:
-                args (tensor): mean and log of variance of Q(z|X)
-            # Returns:
-                z (tensor): sampled latent vector
-        """
-        z_mean, z_logvar = args
-        batch = tf.shape(z_mean)[0]
-        dim = tf.shape(z_mean)[-1]
+class GaitNN:
+    class Encoder(K.models.Model):
 
-        #sampling z = mean + exp(logvar) * eps
-        epsilon = tf.random_normal(shape=[batch, dim])
-        z = z_mean + tf.exp(0.5 * z_logvar) * epsilon
-        return z
+        def sampling(self, args):
+            """Reparameterization trick by sampling fr an isotropic unit Gaussian.
+                # Arguments:
+                    args (tensor): mean and log of variance of Q(z|X)
+                # Returns:
+                    z (tensor): sampled latent vector
+            """
+            z_mean, z_logvar = args
+            batch = tf.shape(z_mean)[0]
+            dim = tf.shape(z_mean)[-1]
 
-    def __init__(self, conf):
-        super().__init__()
-        self.encoder1 = K.layers.Conv1D(name="encoder1", filters=conf.filter_size[0], kernel_size=conf.kernel_size[0])
-        self.encoder2 = K.layers.Conv1D(name="encoder2", filters=conf.filter_size[0], kernel_size=conf.kernel_size[0])
-        self.encoder3 = K.layers.Conv1D(name="encoder3", filters=conf.filter_size[1], kernel_size=conf.kernel_size[1])
-        self.encoder4 = K.layers.Conv1D(name="encoder3", filters=conf.filter_size[1], kernel_size=conf.kernel_size[1])
+            # sampling z = mean + exp(logvar) * eps
+            epsilon = tf.random_normal(shape=[batch, dim])
+            z = z_mean + tf.exp(0.5 * z_logvar) * epsilon
+            return z
 
-        self.dense_mu = K.layers.Dense(name="z_mu", units=conf.latent_dim)
-        self.dense_logvar = K.layers.Dense(name="z_var", units=conf.latent_dim)
+        def __init__(self, conf):
+            super().__init__()
+            self.encoder1 = K.layers.Conv1D(name="encoder1", padding="same",
+                                            kernel_size=conf.kernel_size[0], filters=conf.filter_size[0])
+            self.encoder2 = K.layers.Conv1D(name="encoder2", padding="same",
+                                            kernel_size=conf.kernel_size[1], filters=conf.filter_size[1])
+            self.encoder3 = K.layers.Conv1D(name="encoder3", padding="same",
+                                            kernel_size=conf.kernel_size[2], filters=conf.filter_size[2])
+            self.encoder4 = K.layers.Conv1D(name="encoder3", padding="same",
+                                            kernel_size=conf.kernel_size[2], filters=conf.filter_size[3])
 
-        self.pool = K.layers.MaxPool1D(pool_size=conf.pool_size, padding="valid", strides=conf.strides)
+            self.dense_mu = K.layers.Dense(name="z_mu", units=conf.latent_dim)
+            self.dense_logvar = K.layers.Dense(name="z_var", units=conf.latent_dim)
 
-        self.sampling_func = K.layers.Lambda(self.sampling, output_shape=[conf.latent_dim, ], name="z")
+            self.pool = K.layers.MaxPool1D(pool_size=conf.pool_size, padding="valid")
 
-    def call(self, inputs, training=None, mask=None):
-        decoded = self.pool(self.encoder1(inputs))
-        decoded = self.encoder2(decoded)
-        decoded = self.pool(self.encoder3(decoded))
-        decoded = self.pool(self.encoder4(decoded))
+            self.sampling_func = K.layers.Lambda(self.sampling, output_shape=[conf.latent_dim, ], name="z")
+            self.flatten = K.layers.Flatten()
 
-        z_mu = self.dense_mu(decoded)
-        z_logvar = self.dense_logvar(decoded)
+        def call(self, inputs, training=None, mask=None):
+            encoded = self.pool(self.encoder1(inputs))
+            encoded = self.encoder2(encoded)
+            encoded = self.pool(self.encoder3(encoded))
+            encoded = self.pool(self.encoder4(encoded))
 
-        z = self.sampling_func([z_mu, z_logvar])
+            encoded_shape = tf.shape(encoded)
+            z_mu = self.dense_mu(self.flatten(encoded))
+            z_logvar = self.dense_logvar(self.flatten(encoded))
 
-        return z, z_mu, z_logvar
+            z = self.sampling_func([z_mu, z_logvar])
 
-    def encode(self, x):
-        return self(x)
+            return z, z_mu, z_logvar, encoded_shape
+
+        def encode(self, x):
+            return self(x)
+
+    class Decoder(K.models.Model):
+
+        def __init__(self, conf):
+            super().__init__()
+            self.decoder1 = K.layers.Conv1D(name="decoder1", padding="same",
+                                            kernel_size=conf.kernel_size[2], filters=conf.filter_size[3])
+            self.decoder2 = K.layers.Conv1D(name="decoder2", padding="same",
+                                            kernel_size=conf.kernel_size[2], filters=conf.filter_size[2])
+            self.decoder3 = K.layers.Conv1D(name="decoder3", padding="same",
+                                            kernel_size=conf.kernel_size[1], filters=conf.filter_size[1])
+            self.decoder4 = K.layers.Conv1D(name="decoder4", padding="same",
+                                            kernel_size=conf.kernel_size[0], filters=conf.filter_size[0])
+            self.decoder5 = K.layers.Conv1D(name="decoder5", padding="same",
+                                            kernel_size=conf.kernel_size[2], filters=conf.origin_unit)
 
 
+
+            self.up_sample = K.layers.UpSampling1D(size=conf.pool_size)
+
+        def call(self, inputs, training=None, mask=None):
+            z = K.layers.Dense(units=inputs[1][1] * inputs[1][2])(inputs[0])
+            z = tf.reshape(z, inputs[1])
+            decoded = self.up_sample(self.decoder1(z))
+            decoded = self.decoder2(decoded)
+            decoded = self.up_sample(self.decoder3(decoded))
+            decoded = self.up_sample(self.decoder4(decoded))
+            decoded = self.decoder5(decoded)
+            return decoded
+
+        def decode(self, x, encoded_shape):
+            return self([x, encoded_shape])

@@ -48,7 +48,7 @@ with tf.Session() as session:
             _, loss = session.run([train, entropy], feed_dict={X: X_batch, y: t_batch})
             avg_cost += loss / total_batch
 
-    
+
 
 
 
