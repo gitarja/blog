@@ -1,33 +1,31 @@
 import pandas as pd
 import numpy as np
+from utils import Configurations
 
 from scipy import signal
 class PreProcessing:
     def __init__(self, fs):
         self.fs = fs
+        self.conf = Configurations
 
 
 
-    def butter_highpass(self, cutoff, fs, order=5):
-        nyq = 0.5 * fs
+
+    def butter_lowpass(self, cutoff, order=5):
+        nyq = 0.5 * self.fs
         normal_cutoff = cutoff / nyq
         b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
         return b, a
 
-    def butter_highpass_filter(self, data, cutoff, fs, order=5):
-        b, a = self.butter_highpass(cutoff, fs, order=order)
+    def butter_lowpass_filter(self, data, cutoff, order=5):
+        b, a = self.butter_lowpass(cutoff, order=order)
         y = signal.filtfilt(b, a, data)
         return y
 
     def scale(self, data):
-        data = self.butter_highpass_filter(data, cutoff=4.5, fs=self.fs, order=5)
-        max = np.max(data)
-        min = np.min(data)
-
-        return (data - min) / (max - min)
+        return (data - self.conf.MIN_SIG_VAL) / (self.conf.MAX_SIG_VAL - self.conf.MIN_SIG_VAL)
 
     def spatial_result(self, data):
         if data is not None:
-            data = self.butter_highpass_filter(data, cutoff=4.5, fs=self.fs, order=5)
             f, power = signal.welch(data, self.fs)
             return f, power
